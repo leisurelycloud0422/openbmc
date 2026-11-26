@@ -1,0 +1,21 @@
+[Unit]
+Description=Rainier CRB MCTP over I3C
+StartLimitIntervalSec=0
+
+Requires=mctpd.service
+After=mctpd.service host-poweron@%i.service
+PartOf=mctpd.service
+Conflicts=obmc-host-stopped@%i.target
+After=obmc-host-stopped@%i.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/mctp/rainier-mctp-i3c.sh start
+ExecStopPost=/usr/libexec/mctp/rainier-mctp-i3c.sh stop
+TimeoutStopSec=30s
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=obmc-host-started@%i.target

@@ -2,7 +2,7 @@ SUMMARY = "Chassis Power Control service for Intel based platforms"
 DESCRIPTION = "Chassis Power Control service for Intel based platforms"
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=86d3f3a95c324c9479bd8986968f4327"
-SRCREV = "24989b1de7659f4850f8097bddbc4496d7d599bb"
+SRCREV = "4a5a80cf16db3a91855c5e3efaf9af2f0a5b8fa7"
 PV = "1.0+git${SRCPV}"
 
 SRC_URI = "git://github.com/openbmc/x86-power-control.git;protocol=https;branch=master"
@@ -19,8 +19,14 @@ DEPENDS += " \
     nlohmann-json \
     sdbusplus \
     phosphor-logging \
+    ${@bb.utils.contains('PTEST_ENABLED', '1', 'gtest', '', d)} \
+    ${@bb.utils.contains('PTEST_ENABLED', '1', 'gmock', '', d)} \
   "
 FILES:${PN}  += "${systemd_system_unitdir}/xyz.openbmc_project.Chassis.Control.Power@.service"
+
+EXTRA_OEMESON:append = " \
+    -Dtests=${@bb.utils.contains('PTEST_ENABLED', '1', 'enabled', 'disabled', d)} \
+"
 
 pkg_postinst:${PN}:append() {
     mkdir -p $D$systemd_system_unitdir/sysinit.target.wants

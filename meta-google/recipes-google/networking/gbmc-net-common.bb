@@ -5,7 +5,9 @@ LIC_FILES_CHKSUM = "file://${COREBASE}/meta/files/common-licenses/Apache-2.0;md5
 
 SRC_URI += " \
   file://gbmc-net-lib.sh \
+  file://gbmc-net-lib-test.sh \
   file://gbmc-ra.sh \
+  file://gbmc-ra-test.sh \
   "
 S = "${UNPACKDIR}"
 
@@ -13,11 +15,18 @@ FILES:${PN} += " \
   ${datadir}/ \
   "
 
+DEPENDS += "test-sh network-sh"
+
 RDEPENDS:${PN}:append = " \
   bash \
   network-sh \
   ndisc6-rdisc6 \
   "
+
+do_compile() {
+  SYSROOT="${STAGING_DIR_HOST}" bash gbmc-net-lib-test.sh || exit
+  SYSROOT="${STAGING_DIR_HOST}" bash gbmc-ra-test.sh || exit
+}
 
 do_install() {
   install -d -m0755 ${D}${datadir}

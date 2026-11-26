@@ -23,78 +23,82 @@ source /usr/share/gbmc-net-lib.sh || exit
 gbmc_nic_neigh_intfs=(@IFS@)
 gbmc_nic_neigh_addr=
 
+gbmc_nic_neigh_ips() {
+  local -n out_ips="$1"
+  local ip="$2"
+
+  local pfx_bytes=()
+  ip_to_bytes pfx_bytes "$ip"
+  (( pfx_bytes[8] |= 0xfd ))
+  out_ips=("$ip")
+  local i
+  for (( i=1; i<16; ++i )); do
+    (( pfx_bytes[9] &= 0xf0 ))
+    (( pfx_bytes[9] |= i ))
+    out_ips+=("$(ip_bytes_to_str pfx_bytes)")
+  done
+}
+
 gbmc_nic_neigh_set() {
   local act="$1"
   local ip="$2"
 
   echo "gBMC NIC Neigh $act $ip: ${gbmc_nic_neigh_intfs[*]}" >&2
 
-  local pfx_bytes=()
-  ip_to_bytes pfx_bytes "$ip"
-  (( pfx_bytes[8] |= 0xfd ))
-  local neigh_ips=("$ip")
-  local i
-  for (( i=1; i<16; ++i )); do
-    (( pfx_bytes[9] &= 0xf0 ))
-    (( pfx_bytes[9] |= i ))
-    neigh_ips+=("$(ip_bytes_to_str pfx_bytes)")
-  done
+  local neigh_ips=()
+  gbmc_nic_neigh_ips neigh_ips "$ip"
 
   local intf
   for intf in "${gbmc_nic_neigh_intfs[@]}"; do
     local rt
     rt="$(gbmc_net_route_table_for_intf "$intf")" || continue
-    local contents
-    read -r -d '' contents <<EOF
-[RoutingPolicyRule]
-To=$ip/64
-Table=main
-Priority=$GBMC_INTF_ROUTE_TABLE_BASE
-[RoutingPolicyRule]
-From=$ip/64
-Table=$rt
-Priority=$rt
-[Network]
-IPv6ProxyNDP=yes
-EOF
     local neigh_ip
-    for neigh_ip in "${neigh_ips[@]}"; do
-      contents+=$'\n'"IPv6ProxyNDPAddress=$neigh_ip"
-    done
-    # Override any existing gateway information within files
-    # Make sure we cover `00-*` and `-*` files
-    for file in /run/systemd/network/{00,}-bmc-"$intf".network; do
-      mkdir -p "$file.d"
-      if [[ "$act" == add ]]; then
-        printf '%s' "$contents" >"$file.d"/10-nic-neigh-table.conf
-      else
-        rm -f "$file.d"/10-nic-neigh-table.conf
-      fi
-    done
-
     if [[ "$act" == add ]]; then
-      sysctl net.ipv6.conf."$intf".proxy_ndp=1 >/dev/null
+      local contents=
+      gbmc_net_intf_rules_conf contents "$ip/64" "$rt"
+      contents+="[Network]"$'\n'"IPv6ProxyNDP=yes"
+      for neigh_ip in "${neigh_ips[@]}"; do
+        contents+=$'\n'"IPv6ProxyNDPAddress=$neigh_ip"
+      done
+      gbmc_net_networkd_write_dropin "$intf" 10-nic-neigh-table.conf "$contents" || true
+
+      gbmc_net_proxy_ndp_add "$intf" "${neigh_ips[@]}" || true
+      gbmc_net_intf_rules_set add "$ip/64" "$rt" || true
       # Write the necessary firewall rules to forward IP traffic
-      cat >/run/nftables/40-gbmc-"$intf"-br.rules <<EOF
+      local rules
+      read -r -d '' rules <<EOF
 table inet filter {
   chain ${intf}_forward {
     ip6 saddr != $ip/64 ip6 daddr $ip/64 accept
   }
 }
 EOF
+      gbmc_net_write_if_changed "$rules" \
+        /run/nftables/40-gbmc-"$intf"-br.rules || true
     else
-      rm -f /run/nftables/40-gbmc-"$intf"-br.rules
+      gbmc_net_networkd_write_dropin "$intf" 10-nic-neigh-table.conf '' || true
+      for neigh_ip in "${neigh_ips[@]}"; do
+        ip -6 neigh del proxy "$neigh_ip" dev "$intf" 2>/dev/null || true
+      done
+      gbmc_net_intf_rules_set del "$ip/64" "$rt"
+      gbmc_net_write_if_changed '' \
+        /run/nftables/40-gbmc-"$intf"-br.rules || true
     fi
   done
-  systemctl reset-failed nftables || true
-  systemctl --no-block reload-or-restart nftables || true
-  # shellcheck disable=SC2119
-  gbmc_net_networkd_reload
 }
 
 gbmc_nic_neigh_hook() {
   # shellcheck disable=SC2154
-  if [[ $change == addr && $intf == gbmcbr && $scope == global ]] &&
+  if [[ $change == init && -z $gbmc_nic_neigh_addr ]]; then
+    # Our address went away while we weren't running, drop the config left
+    # for it, which networkd would otherwise keep applying
+    local neigh_intf
+    for neigh_intf in "${gbmc_nic_neigh_intfs[@]}"; do
+      gbmc_net_networkd_write_dropin "$neigh_intf" 10-nic-neigh-table.conf '' || true
+      gbmc_net_write_if_changed '' \
+        /run/nftables/40-gbmc-"$neigh_intf"-br.rules || true
+    done
+  elif [[ $change == addr && $intf == gbmcbr && $scope == global ]] &&
        [[ $fam == inet6 && $flags != *tentative* ]]; then
     local ip_bytes=()
     if ! ip_to_bytes ip_bytes "$ip"; then
@@ -125,7 +129,12 @@ gbmc_nic_neigh_hook() {
     local gbmcintf
     for gbmcintf in "${gbmc_nic_neigh_intfs[@]}"; do
       if [[ $intf == "$gbmcintf" ]]; then
-        ip neigh replace proxy "$gbmc_nic_neigh_addr" dev "$intf"
+        echo "gBMC NIC Neigh carrier UP $gbmc_nic_neigh_addr: $intf" >&2
+        local neigh_ips=()
+        gbmc_nic_neigh_ips neigh_ips "$gbmc_nic_neigh_addr"
+        # networkd has the same proxies in its drop-in, a plain reload
+        # wouldn't reapply them as nothing changed
+        gbmc_net_proxy_ndp_add "$intf" "${neigh_ips[@]}" || true
       fi
     done
   fi

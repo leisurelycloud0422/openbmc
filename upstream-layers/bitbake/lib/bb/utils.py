@@ -529,6 +529,9 @@ def lockfile(name, shared=False, retry=True, block=False):
 
     Returns the locked file descriptor in case of success, ``None`` otherwise.
     """
+    if not name:
+        return None
+
     basename = os.path.basename(name)
     if len(basename) > 255:
         root, ext = os.path.splitext(basename)
@@ -584,6 +587,14 @@ def lockfile(name, shared=False, retry=True, block=False):
         if not retry:
             return None
 
+# We have to drop the existing lock to avoid deadlocks
+def lockfile_to_exclusive(lf):
+    if not lf:
+        return
+    name = lf.name
+    unlockfile(lf)
+    return lockfile(name)
+
 def unlockfile(lf):
     """
     Unlock a file locked using ``bb.utils.lockfile()``.
@@ -594,6 +605,9 @@ def unlockfile(lf):
 
     No return value.
     """
+    if not lf:
+        return
+
     try:
         # If we had a shared lock, we need to promote to exclusive before
         # removing the lockfile. Attempt this, ignore failures.
@@ -2066,8 +2080,46 @@ def disable_network(uid=None, gid=None):
     with open("/proc/self/gid_map", "w") as f:
         f.write("%s %s 1" % (gid, gid))
 
+def landlock_restrict_network():
+    """Block TCP bind/connect using Landlock LSM (ABI v4+, kernel 6.7+).
+    Gracefully skipped on older kernels. Stacks with disable_network()."""
+
+    NR_landlock_create_ruleset = 444
+    NR_landlock_restrict_self  = 446
+
+    LANDLOCK_ACCESS_NET_BIND_TCP    = 0x1
+    LANDLOCK_ACCESS_NET_CONNECT_TCP = 0x2
+
+    LANDLOCK_CREATE_RULESET_VERSION = 1
+
+    PR_SET_NO_NEW_PRIVS = 38
+
+    libc = ctypes.CDLL('libc.so.6')
+
+    libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
+    abi = libc.syscall(NR_landlock_create_ruleset,
+                       0, 0,
+                       LANDLOCK_CREATE_RULESET_VERSION)
+    if abi < 4:
+        logger.debug("System doesn't support disabling network via landlock")
+        return
+
+    net_access = LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP
+    attr = struct.pack("QQ", 0, net_access)
+    buf = ctypes.create_string_buffer(attr)
+    fd = libc.syscall(NR_landlock_create_ruleset, buf, len(attr), 0)
+    if fd < 0:
+        logger.debug("Failed to create landlock ruleset for network restriction")
+        return
+
+    r = libc.syscall(NR_landlock_restrict_self, fd, 0)
+    if r < 0:
+        logger.debug("Failed to landlock restrict_self")
+
+    os.close(fd)
+
 def export_proxies(d):
-    from bb.fetch2 import get_fetcher_environment
+    from bb.fetch import get_fetcher_environment
     """ export common proxies variables from datastore to environment """
     newenv = get_fetcher_environment(d)
     for v in newenv:

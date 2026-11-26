@@ -6,13 +6,13 @@ DEPENDS += "sdbusplus"
 DEPENDS += "phosphor-dbus-interfaces"
 DEPENDS += "sdeventplus"
 DEPENDS += "phosphor-logging"
-SRCREV = "1f4326c972163861723abdc6b6ea57e40b112841"
+SRCREV = "a9e40eb9c333a8845e9d41ba1b6cf17177e2412e"
 PV = "0.1+git${SRCPV}"
 PR = "r1"
 
 SRC_URI = "git://github.com/openbmc/phosphor-ecc.git;branch=master;protocol=https"
 
-SYSTEMD_SERVICE:${PN} = " ${PN}.service"
+SYSTEMD_SERVICE:${PN} = " ${BPN}.service"
 
 inherit meson pkgconfig
 inherit systemd

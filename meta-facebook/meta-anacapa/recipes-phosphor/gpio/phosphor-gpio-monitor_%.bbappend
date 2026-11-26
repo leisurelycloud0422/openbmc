@@ -1,4 +1,4 @@
-FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/${BPN}:"
 
 inherit obmc-phosphor-utils
 inherit systemd
@@ -9,22 +9,22 @@ SERVICE_LIST = "assert-post-end.service \
                 deassert-post-end.service \
                 deassert-power-good-drop.service \
                 multi-gpios-sys-init.service \
-                power-rail-logger@.service \
+                power-rail-assert-log@.service \
+                power-rail-deassert-log@.service \
                 dimm-power-fault-logger@.service \
                 hpm-power-fault@.service \
                 thermal-event-logger@.service \
                 fan-pg-event-logger@.service \
-                ssd-pg-event-logger@.service \
                 rescan-fru-device@.service \
+                amc-boot-failure-logger@.service \
                 "
 
 SERVICE_FILE_FMT = "file://{0}"
 
 SRC_URI += " \
-    file://assert-post-end \
+    file://assert-post-end.conf \
     file://assert-power-good-drop \
     file://bind-apml-driver \
-    file://deassert-post-end \
     file://deassert-power-good-drop \
     file://multi-gpios-sys-init \
     file://plat-phosphor-multi-gpio-monitor.json \
@@ -34,8 +34,8 @@ SRC_URI += " \
     file://hpm-power-fault \
     file://thermal-event-logger \
     file://fan-pg-event-logger \
-    file://ssd-pg-event-logger \
     file://rescan-fru-device \
+    file://amc-boot-failure-logger \
     ${@compose_list(d, 'SERVICE_FILE_FMT', 'SERVICE_LIST')} \
     "
 
@@ -56,20 +56,21 @@ do_install:append() {
         install -m 0644 ${UNPACKDIR}/${s} ${D}${systemd_system_unitdir}/${s}
     done
 
-    install -d ${D}${libexecdir}/${PN}
-    install -m 0755 ${UNPACKDIR}/assert-post-end ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/assert-power-good-drop ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/bind-apml-driver ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/deassert-post-end ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/deassert-power-good-drop ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/multi-gpios-sys-init ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/power-rail-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/dimm-power-fault-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/hpm-power-fault ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/thermal-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/fan-pg-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/ssd-pg-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/rescan-fru-device ${D}${libexecdir}/${PN}/
+    install -d ${D}${libexecdir}/${BPN}
+    install -d ${D}${systemd_system_unitdir}/assert-post-end.service.d
+    install -m 0644 ${UNPACKDIR}/assert-post-end.conf \
+        ${D}${systemd_system_unitdir}/assert-post-end.service.d/assert-post-end.conf
+    install -m 0755 ${UNPACKDIR}/assert-power-good-drop ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/bind-apml-driver ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/deassert-power-good-drop ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/multi-gpios-sys-init ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/power-rail-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/dimm-power-fault-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/hpm-power-fault ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/thermal-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/fan-pg-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/rescan-fru-device ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/amc-boot-failure-logger ${D}${libexecdir}/${BPN}/
 
     install -d ${D}${systemd_system_unitdir}/phosphor-multi-gpio-monitor.service.d
     install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor.conf \

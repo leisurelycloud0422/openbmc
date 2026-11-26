@@ -2,6 +2,61 @@
 # shellcheck source=meta-facebook/meta-yosemite5/recipes-yosemite5/plat-tool/files/yosemite5-common-functions
 source /usr/libexec/yosemite5-common-functions
 
+apml_recovery()
+{
+    local socket=0
+    local max_switches=3
+    local channel=0
+    local switches=0
+    local rmi_ok=0 tsi_ok=0
+    local result
+    local status=0
+
+    if [ "$(get_gpio PWRGD_CPU_PWROK_1)" -ne 1 ]; then
+        return 0
+    fi
+
+    # An unexpected reset of BMC in the middle of SBI transactions can leave
+    # the target device controllers in a hung state or RX/TX FIFOs in a
+    # non-empty state that could skew the data bytes associated with SBI
+    # requests. Execute SB-RMI and SB-TSI reset recovery flows to clear off
+    # stale state in the SBI targets.
+    #
+    # Recovery relies on one of SB-RMI/SB-TSI being healthy to recover the
+    # other, so a failed channel is retried on the other channel instead of
+    # itself. Switch back and forth until both channels have succeeded.
+    echo "Host state is Running, recovering APML..."
+
+    while :; do
+        echo "Recovering APML channel $channel..."
+        result=$(apml_tool "$socket" --apml_recovery "$channel")
+        echo "$result"
+
+        if echo "$result" | grep -q "Failed"; then
+            [ "$channel" -eq 0 ] && rmi_ok=0 || tsi_ok=0
+            echo "APML recovery on channel $channel failed"
+        else
+            [ "$channel" -eq 0 ] && rmi_ok=1 || tsi_ok=1
+        fi
+
+        if [ "$rmi_ok" -eq 1 ] && [ "$tsi_ok" -eq 1 ]; then
+            break
+        fi
+
+        if [ "$switches" -ge "$max_switches" ]; then
+            echo "APML recovery on socket $socket failed after $max_switches switches"
+            status=1
+            break
+        fi
+
+        switches=$((switches + 1))
+        echo "Switching to channel $((1 - channel))..."
+        channel=$((1 - channel))
+    done
+
+    return "$status"
+}
+
 set_product_versions_to_mb_cpld()
 {
     printf "Setting board product version to MB CPLD\n"
@@ -73,14 +128,91 @@ set_product_versions_to_mb_cpld()
     done
 }
 
-ti_hsc_init()
+verify_reg()
 {
-    local BOARD="1KW_paddle_BD"
+    local BUS="$1"
+    local ADDR="$2"
+    local REG="$3"
+    local EXPECTED="$4"
+    local MODE="$5"
+    local NAME="$6"
+    local READ_VAL
+
+    READ_VAL=$(i2cget -y -f "$BUS" "$ADDR" "$REG" "$MODE" 2>/dev/null)
+
+    if [ -z "$READ_VAL" ]; then
+        echo "Failed to read $NAME"
+    elif [ "$((READ_VAL))" -eq "$((EXPECTED))" ]; then
+        echo "$NAME set to $EXPECTED"
+    else
+        echo "$NAME mismatch (W:$EXPECTED R:$READ_VAL)"
+    fi
+}
+
+T2_init()
+{
+    local BOARD_PADDLE="1KW_paddle_BD"
     local FRU_NAME
     local SOURCE
 
-    if ! FRU_NAME=$(find_fru_name "$BOARD"); then
-        echo "Can't find ${BOARD} FRU."
+    ti_hsc_init()
+    {
+        local BUS="8"
+        local ADDR="0x47"
+        local REG_CLEAR_FAULTS="0x03"
+        local REG_VOUT_UV_WARN="0x43"
+        local REG_OT_WARN="0x51"
+        local REG_VIN_OV_WARN="0x57"
+        local REG_VIN_UV_WARN="0x58"
+        local REG_IIN_OC_WARN="0x5D"
+        local REG_PIN_OP_WARN="0x6B"
+        local REG_ALERT_MASK="0xDB"
+        local REG_OC_TIMER="0xE6"
+        local REG_WRITE_PROTECT="0xF8"
+        local WRITE_PROTECT_VAL="0xA2"
+        local OC_TIMER_VAL="0x5c"
+        local ALERT_MASK_VAL="0x0102"
+        local VOUT_UV_WARN_VAL="0x0087"
+        local OT_WARN_VAL="0x0074"
+        local VIN_OV_WARN_VAL="0x00AA"
+        local VIN_UV_WARN_VAL="0x0087"
+        local IIN_OC_WARN_VAL="0x0076"
+        local PIN_OP_WARN_VAL="0x0049"
+
+        echo "Initializing TIC HSC"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_WRITE_PROTECT" "$WRITE_PROTECT_VAL" || echo "Failed to unlock write protection"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_OC_TIMER" "$OC_TIMER_VAL" || echo "Failed to set OC timer"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_ALERT_MASK" "$ALERT_MASK_VAL" w || echo "Failed to set alert mask"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_VOUT_UV_WARN" "$VOUT_UV_WARN_VAL" w || echo "Failed to set VOUT UV warning"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_OT_WARN" "$OT_WARN_VAL" w || echo "Failed to set OT warning"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_VIN_OV_WARN" "$VIN_OV_WARN_VAL" w || echo "Failed to set VIN OV warning"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_VIN_UV_WARN" "$VIN_UV_WARN_VAL" w || echo "Failed to set VIN UV warning"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_IIN_OC_WARN" "$IIN_OC_WARN_VAL" w || echo "Failed to set IIN OC warning"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_PIN_OP_WARN" "$PIN_OP_WARN_VAL" w || echo "Failed to set PIN OP warning"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_CLEAR_FAULTS" || echo "Failed to clear faults"
+
+        verify_reg "$BUS" "$ADDR" "$REG_OC_TIMER" "$OC_TIMER_VAL" "" "OC timer"
+        verify_reg "$BUS" "$ADDR" "$REG_ALERT_MASK" "$ALERT_MASK_VAL" "w" "Alert mask"
+        verify_reg "$BUS" "$ADDR" "$REG_VOUT_UV_WARN" "$VOUT_UV_WARN_VAL" "w" "VOUT UV warning"
+        verify_reg "$BUS" "$ADDR" "$REG_OT_WARN" "$OT_WARN_VAL" "w" "OT warning"
+        verify_reg "$BUS" "$ADDR" "$REG_VIN_OV_WARN" "$VIN_OV_WARN_VAL" "w" "VIN OV warning"
+        verify_reg "$BUS" "$ADDR" "$REG_VIN_UV_WARN" "$VIN_UV_WARN_VAL" "w" "VIN UV warning"
+        verify_reg "$BUS" "$ADDR" "$REG_IIN_OC_WARN" "$IIN_OC_WARN_VAL" "w" "IIN OC warning"
+        verify_reg "$BUS" "$ADDR" "$REG_PIN_OP_WARN" "$PIN_OP_WARN_VAL" "w" "PIN OP warning"
+    }
+
+    rds_hsc_init()
+    {
+        local BUS="8"
+        local ADDR="0x4B"
+        local REG_CLEAR_FAULTS="0x03"
+
+        echo "Initializing RDS HSC"
+        i2cset -y -f "$BUS" "$ADDR" "$REG_CLEAR_FAULTS" || echo "Failed to clear faults"
+    }
+
+    if ! FRU_NAME=$(find_fru_name "$BOARD_PADDLE"); then
+        echo "Can't find ${BOARD_PADDLE} FRU."
         return
     fi
 
@@ -90,46 +222,182 @@ ti_hsc_init()
         return
     fi
 
-    if [ "$SOURCE" = "HSC-TIC" ]; then
-        local BUS="8"
-        local ADDR="0x47"
-        local REG_WRITE_PROTECT="0xF8"
-        local REG_OC_TIMER="0xE6"
-        local REG_ALERT_MASK="0xDB"
-        local WRITE_PROTECT_VAL="0xA2"
-        local OC_TIMER_VAL="0x5c"
-        local ALERT_MASK_VAL="0x0102"
-        local READ_VAL
+    case "$SOURCE" in
+        HSC-TIC)  ti_hsc_init ;;
+        HSC-RDS)  rds_hsc_init ;;
+        *)        : ;;
+    esac
+}
 
-        echo "Initializing TIC HSC"
-        i2cset -y -f "$BUS" "$ADDR" "$REG_WRITE_PROTECT" "$WRITE_PROTECT_VAL" || echo "Failed to unlock write protection"
-        i2cset -y -f "$BUS" "$ADDR" "$REG_OC_TIMER" "$OC_TIMER_VAL" || echo "Failed to set OC timer"
-        i2cset -y -f "$BUS" "$ADDR" "$REG_ALERT_MASK" "$ALERT_MASK_VAL" w || echo "Failed to set alert mask"
+T22_init(){
+    echo "initial value for GPIO output pins of T22"
 
-        READ_VAL=$(i2cget -y -f "$BUS" "$ADDR" "$REG_OC_TIMER" 2>/dev/null)
-        if [ -z "$READ_VAL" ]; then
-            echo "Failed to read OC timer"
-        elif [ "$READ_VAL" == "$OC_TIMER_VAL" ]; then
-            echo "OC timer set to $OC_TIMER_VAL"
-        else
-            echo "OC timer mismatch (W:$OC_TIMER_VAL R:$READ_VAL)"
-        fi
+    BOOTSTATUS_FILE="/sys/class/watchdog/watchdog0/bootstatus"
 
-        READ_VAL=""
-
-        READ_VAL=$(i2cget -y -f "$BUS" "$ADDR" "$REG_ALERT_MASK" w 2>/dev/null)
-        if [ -z "$READ_VAL" ]; then
-            echo "Failed to read alert mask"
-        elif [ "$READ_VAL" == "$ALERT_MASK_VAL" ]; then
-            echo "Alert mask set to $ALERT_MASK_VAL"
-        else
-            echo "Alert mask mismatch (W:$ALERT_MASK_VAL R:$READ_VAL)"
-        fi
+    # Check bmc last boot status, if not power-on-reset, skip init
+    if [ -f "$BOOTSTATUS_FILE" ]; then
+        bootstatus=$(cat "$BOOTSTATUS_FILE" 2>/dev/null)
+    else
+        echo "$BOOTSTATUS_FILE not found, defaulting to 0 "
+        bootstatus=0
     fi
+    if [ "$bootstatus" != "0" ]; then
+        echo "BMC not Power-On-Reset (bootstatus=$bootstatus), skip init"
+        exit 0
+    fi
+
+    # set initial value for IOEXP GPIO output pins
+    # 3kw board
+    set_gpio HSC_OC_GPIO0 0
+    set_gpio HSC_OC_GPIO1 0
+    set_gpio HSC_OC_GPIO2 0
+    set_gpio HSC_OC_GPIO3 1
+    set_gpio RST_SMB_MUX 1
+    set_gpio EN_P12V_SLOT_FLASH_R1 0
+
+    # Rio Grande
+    set_gpio EN_P12V_U2_1_R 0
+    set_gpio PWRDIS_U2_1 0
+    set_gpio EN_P12V_U2_2_R 0
+    set_gpio PWRDIS_U2_2 0
+    set_gpio PWRDIS_U2_3 0
+    set_gpio PWRDIS_U2_4 0
+    set_gpio PWRDIS_U2_5 0
+    set_gpio PWRDIS_U2_6 0
+    set_gpio PWRDIS_U2_7 0
+    set_gpio PWRDIS_U2_8 0
+    set_gpio PWRDIS_U2_9 0
+    set_gpio PWRDIS_U2_10 0
+    set_gpio RST_3A_IOEXP5_AND3_R_N 1
+    set_gpio RST_3A_IOEXP5_AND5_R_N 1
+    set_gpio RST_3A_IOEXP5_AND7_R_N 1
+    set_gpio RST_3A_IOEXP5_AND9_R_N 1
+    set_gpio RST_3A_IOEXP5_AND10_R_N 1
+    set_gpio RST_3A_IOEXP5_AND8_R_N 1
+    set_gpio RST_3A_IOEXP5_AND6_R_N 1
+    set_gpio RST_3A_IOEXP5_AND4_R_N 1
+    set_gpio RST_3A_IOEXP5_AND2_R_N 1
+    set_gpio RST_3A_IOEXP5_AND1_R_N 1
+    set_gpio EN_P12V_U2_3_R1 0
+    set_gpio EN_P12V_U2_4_R1 0
+    set_gpio EN_P12V_U2_5_R1 0
+    set_gpio EN_P12V_U2_6_R1 0
+    set_gpio EN_P12V_U2_7_R1 0
+    set_gpio EN_P12V_U2_8_R1 0
+    set_gpio EN_P12V_U2_9_R1 0
+    set_gpio EN_P12V_U2_10_R1 0
+    set_gpio PWRDIS_U2_11 0
+    set_gpio PWRDIS_U2_12 0
+    set_gpio PWRDIS_U2_13 0
+    set_gpio PWRDIS_U2_14 0
+    set_gpio PWRDIS_U2_15 0
+    set_gpio PWRDIS_U2_16 0
+    set_gpio PWRDIS_U2_17 0
+    set_gpio PWRDIS_U2_18 0
+    set_gpio RST_2A_IOEXP4_AND12_R_N 1
+    set_gpio RST_2A_IOEXP4_AND14_R_N 1
+    set_gpio RST_2A_IOEXP4_AND16_R_N 1
+    set_gpio RST_2A_IOEXP4_AND18_R_N 1
+    set_gpio RST_2A_IOEXP4_AND17_R_N 1
+    set_gpio RST_2A_IOEXP4_AND15_R_N 1
+    set_gpio RST_2A_IOEXP4_AND13_R_N 1
+    set_gpio RST_2A_IOEXP4_AND11_R_N 1
+    set_gpio EN_P12V_U2_11_R1 0
+    set_gpio EN_P12V_U2_12_R1 0
+    set_gpio EN_P12V_U2_13_R1 0
+    set_gpio EN_P12V_U2_14_R1 0
+    set_gpio EN_P12V_U2_15_R1 0
+    set_gpio EN_P12V_U2_16_R1 0
+    set_gpio EN_P12V_U2_17_R1 0
+    set_gpio EN_P12V_U2_18_R1 0
+    set_gpio PWRDIS_U2_19 0
+    set_gpio PWRDIS_U2_20 0
+    set_gpio PWRDIS_U2_21 0
+    set_gpio PWRDIS_U2_22 0
+    set_gpio PWRDIS_U2_23 0
+    set_gpio PWRDIS_U2_24 0
+    set_gpio PWRDIS_U2_25 0
+    set_gpio PWRDIS_U2_26 0
+    set_gpio RST_1A_IOEXP4_AND20_R_N 1
+    set_gpio RST_1A_IOEXP4_AND22_R_N 1
+    set_gpio RST_1A_IOEXP4_AND24_R_N 1
+    set_gpio RST_1A_IOEXP4_AND26_R_N 1
+    set_gpio RST_1A_IOEXP4_AND25_R_N 1
+    set_gpio RST_1A_IOEXP4_AND23_R_N 1
+    set_gpio RST_1A_IOEXP4_AND21_R_N 1
+    set_gpio RST_1A_IOEXP4_AND19_R_N 1
+    set_gpio EN_P12V_U2_19_R1 0
+    set_gpio EN_P12V_U2_20_R1 0
+    set_gpio EN_P12V_U2_21_R1 0
+    set_gpio EN_P12V_U2_22_R1 0
+    set_gpio EN_P12V_U2_23_R1 0
+    set_gpio EN_P12V_U2_24_R1 0
+    set_gpio EN_P12V_U2_25_R1 0
+    set_gpio EN_P12V_U2_26_R1 0
+
+    # Rio Grande ADC128D818 mode setting
+    # RIO_GRANDE_ADC1
+    i2cset -yf 69 0x2e 0x00 0x00
+    i2cset -yf 69 0x2e 0x0b 0x02
+    # RIO_GRANDE_ADC2
+    i2cset -yf 70 0x2f 0x00 0x00
+    i2cset -yf 70 0x2f 0x0b 0x02
+    # RIO_GRANDE_ADC3
+    i2cset -yf 70 0x35 0x00 0x00
+    i2cset -yf 70 0x35 0x0b 0x02
+
+    hsc_init(){
+        local bus=$1
+        local addr=$2
+
+        # Get manufacturer ID from HSC
+        mfr_id=""
+        for b in $(i2cget -yf "$bus" "$addr" 0x99 s); do
+            mfr_id=$(printf '%02X' "$b")$mfr_id
+        done
+        mfr_id="0x$mfr_id"
+
+        # MPS config
+        if [ "$mfr_id" = "0x4D5053" ]; then
+            efuse_cfg=$(i2cget -yf "$bus" "$addr" 0xC4 w)
+            cfg=$(( (efuse_cfg | (1 << 8)) & 0xFFFF ))
+            i2cset -yf "$bus" "$addr" 0xC4 "$cfg" w
+        # TI config
+        elif [ "$mfr_id" = "0x4954" ]; then
+            alert_mask=$(i2cget -yf "$bus" "$addr" 0xDB w)
+            cfg=$(( (alert_mask | (1 << 1)) & 0xFFFF ))
+            i2cset -yf "$bus" "$addr" 0xF8 0xA2
+            i2cset -yf "$bus" "$addr" 0xDB "$cfg" w
+            i2cset -yf "$bus" "$addr" 0x03 || echo "Failed to clear faults"
+        else
+            echo "Unknown manufacturer ID: $mfr_id for address $addr"
+        fi
+    }
+
+    # HSC on bus 6
+    for addr in 0x42 0x43 0x44 0x45 0x48; do
+        hsc_init 6 "$addr"
+    done
+
+    # HSC on bus 8
+    hsc_init 8 0x47
 }
 
 set_product_versions_to_mb_cpld
-ti_hsc_init
+
+if ! sku=$(get_sku) ; then
+    logger -t "yosemite5-early-sys-init" "Failed to get SKU, defaulting to 0"
+    sku=0
+fi
+
+case "${sku}" in
+    "${SKU_T22}")
+        T22_init
+    ;;
+    *)
+        T2_init
+    ;;
+esac
 
 echo "initial value for GPIO output pins"
 # set initial value for GPIO output pins
@@ -145,9 +413,11 @@ set_gpio BMC_READY    1
 # I0-I7
 # M0-M7
 # N0-N7
+set_gpio FM_DBP_CPU_PREQ_GF_N 1
 # O0-O7
 # P0-P7
 # Q0-Q7
+set_gpio JTAG_1_BMC_TRST 0
 # R0-R7
 # S0-S7
 # T0-T7
@@ -172,7 +442,7 @@ set_gpio FM_I3C_SPD_AH_SEL_R 0
 set_gpio FM_I3C_SPD_IP_SEL_R 0
 set_gpio FM_JTAG_BMC_MUX_S0_R 0
 set_gpio FM_JTAG_BMC_MUX_S1_R 0
-set_gpio FM_JTAG_BMC_OE_1_R_N 1
+set_gpio FM_JTAG_BMC_OE_1_R_N 0
 set_gpio FM_JTAG_BMC_OE_R_N 1
 set_gpio FM_REMOTEJTAG_EN_R_N 1
 set_gpio FM_CPU_FORCE_SELFREFRESH_R 0
@@ -198,5 +468,7 @@ set_gpio HDT_HDR_RESET_R_N 1
 set_gpio FM_SMB_AUTH_MUX_OE_R_N 1
 set_gpio FM_SCM_LED_R_N 1
 set_gpio SGPIO_BMC_READY 1
+
+apml_recovery
 
 exit 0

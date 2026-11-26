@@ -16,9 +16,15 @@ import re
 import sys
 import hashlib
 from functools import wraps
-import bb
-from bb import data
+
+import bb.cache
+import bb.codeparser
+import bb.data
+import bb.data_smart
+import bb.event
+import bb.fetch
 import bb.parse
+import bb.utils
 
 logger      = logging.getLogger("BitBake")
 parselog    = logging.getLogger("BitBake.Parsing")
@@ -475,6 +481,18 @@ class CookerDataBuilder(object):
                         " the expected location.\nMaybe you accidentally"
                         " invoked bitbake from the wrong directory?")
             bb.fatal(msg)
+
+        # A directory listed more than once in BBPATH is a configuration
+        # error, e.g. a layer in both the BBPATH env var and BBLAYERS. Compare
+        # resolved paths so "dir" and "dir/" or a symlink to it also match, and
+        # ignore the empty entries left by stray colons
+        entries = {}
+        for p in data.getVar("BBPATH").split(":"):
+            if p:
+                entries.setdefault(os.path.realpath(p), []).append(p)
+        duplicates = [" ".join(paths) for paths in entries.values() if len(paths) > 1]
+        if duplicates:
+            bb.fatal("BBPATH contains duplicate entries:\n    %s\nCheck the BBPATH environment variable, bblayers.conf and the layer.conf files." % "\n    ".join(duplicates))
 
         if not data.getVar("TOPDIR"):
             data.setVar("TOPDIR", os.path.abspath(os.getcwd()))

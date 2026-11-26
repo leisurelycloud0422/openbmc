@@ -1,0 +1,94 @@
+#!/bin/bash
+# shellcheck source=meta-facebook/recipes-fb/obmc_functions/files/fb-common-functions
+source /usr/libexec/fb-common-functions
+
+input="$1"
+if [[ "$input" != *":"* ]]; then
+    echo "Error: Invalid instance format, expected ':' separator"
+    exit 1
+fi
+
+GPIO_NET="${input%%:*}"
+Event="${input#*:}"
+
+BUS11=11
+RTC_DEVICE=0x6F
+REG_OFFSET=0x0b
+CLEAR_BIT=0x07
+
+trigger_host_reboot() {
+    systemctl start obmc-host-reboot@0.target
+}
+
+trigger_host_poweroff() {
+    systemctl start obmc-host-shutdown@0.target
+}
+
+trigger_external_warm_reset() {
+    busctl set-property xyz.openbmc_project.State.Host0 \
+        /xyz/openbmc_project/state/host0 \
+        xyz.openbmc_project.State.Host \
+        RequestedHostTransition s \
+        xyz.openbmc_project.State.Host.Transition.ForceWarmReboot
+}
+
+handle_all_power_ok() {
+    local rc=0
+
+    case "$Event" in
+        RISING|INIT_HIGH)
+            set_gpio PMBUS_MUX_SEL_C0 0 || rc=1
+            set_gpio PMBUS_MUX_SEL_C1 0 || rc=1
+            ;;
+        FALLING|INIT_LOW)
+            set_gpio PMBUS_MUX_SEL_C0 1 || rc=1
+            set_gpio PMBUS_MUX_SEL_C1 1 || rc=1
+            ;;
+        *)
+            echo "Error: unsupported wALL_POWER_OK_1 event: $Event"
+            return 1
+            ;;
+    esac
+
+    return "$rc"
+}
+
+restore_clear_rtc_bit() {
+    set_gpio RTC_CLR 0
+    i2cset -f -y "$BUS11" "$RTC_DEVICE" "$REG_OFFSET" "$CLEAR_BIT"
+}
+
+case "$GPIO_NET" in
+    SOC_PORQ)
+        echo "Rainier SoC requested for a cold reboot $GPIO_NET"
+        trigger_host_reboot
+        ;;
+    SOC_RESETREQ)
+        echo "Rainier SoC requested for an external warm reset $GPIO_NET"
+        trigger_external_warm_reset
+        ;;
+    SOC_POST_COMPLETE_CPLD)
+        echo "Rainier SoC post complete $GPIO_NET"
+        ;;
+    FM_BIOS_POST_CMPLT)
+        echo "Rainier BIOS post complete $GPIO_NET"
+        ;;
+    wALL_POWER_OK_1)
+        handle_all_power_ok
+        ;;
+    SOC_SYS_PWRDN_CPLD)
+        trigger_host_poweroff
+        ;;
+    FM_CLEAR_RTC)
+        restore_clear_rtc_bit
+        ;;
+    SOC_ERROR_N_CPLD)
+        echo "Rainier SoC entered an error state; triggering external warm reset $GPIO_NET"
+        trigger_external_warm_reset
+        ;;
+    SOC_PLATHOT_N_CPLD)
+        echo "Rainier Soc platform is hot $GPIO_NET"
+        ;;
+    *)
+        ;;
+esac

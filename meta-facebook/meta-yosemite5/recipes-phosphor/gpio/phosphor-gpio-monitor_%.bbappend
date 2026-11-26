@@ -1,15 +1,16 @@
-FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/${BPN}:"
 
 inherit systemd
 
 SRC_URI += "file://phosphor-multi-gpio-monitor.json \
             file://phosphor-multi-gpio-monitor-evt.json \
+            file://phosphor-multi-gpio-monitor-t22.json \
             file://reset_btn \
             file://reset_btn@.service \
             file://multi-gpios-sys-init \
             file://multi-gpios-sys-init.service \
-            file://assert-host-ready.service \
-            file://deassert-host-ready.service \
+            file://assert-post-end.service \
+            file://deassert-post-end.service \
             file://assert-power-good-drop \
             file://assert-power-good-drop.service \
             file://deassert-power-good-drop \
@@ -36,6 +37,14 @@ SRC_URI += "file://phosphor-multi-gpio-monitor.json \
             file://hotplug-ac-cycle \
             file://uart-select-led@.service \
             file://set-uart-select-led \
+            file://button-event-logger \
+            file://button-event-logger@.service \
+            file://drive-fault-led-assert@.service \
+            file://drive-fault-led-deassert@.service \
+            file://drive-fault-led \
+            file://hsc-fault-assert-log@.service \
+            file://hsc-fault-deassert-log@.service \
+            file://hsc-fault-logger \
             "
 
 RDEPENDS:${PN}:append = " bash"
@@ -45,8 +54,8 @@ FILES:${PN} += "${systemd_system_unitdir}/*"
 SYSTEMD_SERVICE:${PN} += " \
     reset_btn@.service \
     multi-gpios-sys-init.service \
-    assert-host-ready.service \
-    deassert-host-ready.service \
+    assert-post-end.service \
+    deassert-post-end.service \
     assert-power-good-drop.service \
     deassert-power-good-drop.service \
     gpio_bypass@.service \
@@ -62,31 +71,41 @@ SYSTEMD_SERVICE:${PN} += " \
     fault-led-deassert@.service \
     hotplug-ac-cycle@.service \
     uart-select-led@.service \
+    button-event-logger@.service \
+    drive-fault-led-assert@.service \
+    drive-fault-led-deassert@.service \
+    hsc-fault-assert-log@.service \
+    hsc-fault-deassert-log@.service \
     "
 
 do_install:append() {
-    install -d ${D}${datadir}/${PN}
+    install -d ${D}${datadir}/${BPN}
     install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor.json \
-                    ${D}${datadir}/${PN}/phosphor-multi-gpio-monitor.json
+                    ${D}${datadir}/${BPN}/phosphor-multi-gpio-monitor.json
     install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor-evt.json \
-                    ${D}${datadir}/${PN}/phosphor-multi-gpio-monitor-evt.json
+                    ${D}${datadir}/${BPN}/phosphor-multi-gpio-monitor-evt.json
+    install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor-t22.json \
+                    ${D}${datadir}/${BPN}/phosphor-multi-gpio-monitor-t22.json
 
     install -d ${D}${systemd_system_unitdir}/
     install -m 0644 ${UNPACKDIR}/*.service ${D}${systemd_system_unitdir}/
 
-    install -d ${D}${libexecdir}/${PN}
-    install -m 0755 ${UNPACKDIR}/reset_btn ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/gpio_bypass ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/multi-gpios-sys-init ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/thermal-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/vr-fault-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/smc-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/assert-power-good-drop ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/deassert-power-good-drop ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/power-rail-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/fault-led ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/hotplug-ac-cycle ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/set-uart-select-led ${D}${libexecdir}/${PN}/
+    install -d ${D}${libexecdir}/${BPN}
+    install -m 0755 ${UNPACKDIR}/reset_btn ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/gpio_bypass ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/multi-gpios-sys-init ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/thermal-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/vr-fault-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/smc-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/assert-power-good-drop ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/deassert-power-good-drop ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/power-rail-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/fault-led ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/hotplug-ac-cycle ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/set-uart-select-led ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/button-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/drive-fault-led ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/hsc-fault-logger ${D}${libexecdir}/${BPN}/
 
     install -d ${D}${systemd_system_unitdir}/phosphor-multi-gpio-monitor.service.d
     install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor.conf \

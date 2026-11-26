@@ -1,4 +1,4 @@
-FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/${BPN}:"
 
 PACKAGECONFIG:append = " \
     cpld-software-update \
@@ -8,5 +8,5 @@ PACKAGECONFIG:append = " \
 "
 
 PACKAGECONFIG:append:fb-compute-singlehost = " \
-    bios-software-update \
+    spi-flash-software-update \
 "

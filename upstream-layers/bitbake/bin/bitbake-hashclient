@@ -20,7 +20,7 @@ import statistics
 import textwrap
 warnings.simplefilter("default")
 
-__version__ = "2.19.0"
+__version__ = "2.20.0"
 
 try:
     import tqdm
@@ -240,7 +240,7 @@ def main():
         marked_hashes = 0
 
         try:
-            result = client.gc_mark_stream(args.mark, stdin)
+            result = client.gc_mark_batch(args.mark, stdin)
             marked_hashes = result["count"]
         except ConnectionError:
             logger.warning(

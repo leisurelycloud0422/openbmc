@@ -18,6 +18,7 @@ BitBake build tools.
 
 import builtins
 import copy
+import functools
 import re
 import sys
 from collections.abc import MutableMapping
@@ -29,6 +30,10 @@ from bb   import utils
 from bb.COW  import COWDictBase
 
 logger = logging.getLogger("BitBake.Data")
+
+@functools.lru_cache(maxsize=8192)
+def compile_python_expression(code, varname):
+    return compile(code, varname, "eval")
 
 __setvar_keyword__ = [":append", ":prepend", ":remove"]
 __setvar_regexp__ = re.compile(r'(?P<base>.*?)(?P<keyword>:append|:prepend|:remove)(:(?P<add>[^A-Z]*))?$')
@@ -126,14 +131,14 @@ class VariableParse:
 
         # Do not run code that contains one or more unexpanded variables
         # instead return the code with the characters we removed put back
-        if __expand_var_regexp__.findall(code):
+        if __expand_var_regexp__.search(code):
             return "${@" + code + "}"
 
         if self.varname:
             varname = 'Var <%s>' % self.varname
         else:
             varname = '<expansion>'
-        codeobj = compile(code.strip(), varname, "eval")
+        codeobj = compile_python_expression(code.strip(), varname)
 
         parser = bb.codeparser.PythonParser(self.varname, logger)
         parser.parse_python(code)
@@ -661,7 +666,7 @@ class DataSmart(MutableMapping):
     def getVar(self, var, expand=True, noweakdefault=False, parsing=False):
         return self.getVarFlag(var, "_content", expand, noweakdefault, parsing)
 
-    def renameVar(self, key, newkey, **loginfo):
+    def renameVar(self, key, newkey, recurse=True, **loginfo):
         """
         Rename the variable key to newkey
         """
@@ -698,7 +703,8 @@ class DataSmart(MutableMapping):
             self.overridedata[newkey] = []
             for (v, o) in self.overridedata[key]:
                 self.overridedata[newkey].append([v.replace(key, newkey), o])
-                self.renameVar(v, v.replace(key, newkey))
+                if recurse:
+                    self.renameVar(v, v.replace(key, newkey))
 
         if not found:
             # No variable to rename so not worth the work in writing extra

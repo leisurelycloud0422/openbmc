@@ -1,4 +1,4 @@
-FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/${BPN}:"
 
 inherit systemd
 
@@ -13,7 +13,6 @@ SRC_URI += "file://assert-post-end \
             file://auto-poweroff@.service \
             file://auto-poweron \
             file://auto-poweron@.service \
-            file://deassert-post-end \
             file://deassert-post-end.service \
             file://deassert-power-good \
             file://deassert-power-good.service \
@@ -85,7 +84,7 @@ SYSTEMD_SERVICE:${PN} += " \
 do_install:append() {
     install -d ${D}${datadir}/phosphor-gpio-monitor
     install -d ${D}${systemd_system_unitdir}/
-    install -d ${D}${libexecdir}/${PN}
+    install -d ${D}${libexecdir}/${BPN}
 
     install -m 0644 ${UNPACKDIR}/plat-phosphor-multi-gpio-monitor.json \
                     ${D}${datadir}/phosphor-gpio-monitor/phosphor-multi-gpio-monitor.json
@@ -96,37 +95,36 @@ do_install:append() {
     install -m 0644 ${UNPACKDIR}/*.service ${D}${systemd_system_unitdir}/
     install -m 0644 ${UNPACKDIR}/*.timer ${D}${systemd_system_unitdir}
 
-    install -d ${D}${libexecdir}/${PN}
-    install -m 0755 ${UNPACKDIR}/gpios-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/power-rail-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/smc-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/thermal-event-logger ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/vr-fault-event-logger ${D}${libexecdir}/${PN}/
+    install -d ${D}${libexecdir}/${BPN}
+    install -m 0755 ${UNPACKDIR}/gpios-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/power-rail-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/smc-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/thermal-event-logger ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/vr-fault-event-logger ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/logging-util ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/multi-gpios-sys-init ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/logging-util ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/multi-gpios-sys-init ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/assert-reset-button ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/deassert-reset-button ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/assert-reset-button ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/deassert-reset-button ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/assert-post-end ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/deassert-post-end ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/assert-post-end ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/assert-power-good ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/deassert-power-good ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/assert-power-good ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/deassert-power-good ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/device-reinitial ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/device-util ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/device-reinitial ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/device-util ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/deassert-uart-switch-button ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/deassert-uart-switch-button ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/auto-power ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/auto-poweroff ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/auto-poweron ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/auto-power ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/auto-poweroff ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/auto-poweron ${D}${libexecdir}/${BPN}/
 
-    install -m 0755 ${UNPACKDIR}/fan-reload ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/initial-poweron-device ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/mmc-recovery ${D}${libexecdir}/${PN}/
+    install -m 0755 ${UNPACKDIR}/fan-reload ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/initial-poweron-device ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/mmc-recovery ${D}${libexecdir}/${BPN}/
 
     install -d ${D}${systemd_system_unitdir}/phosphor-multi-gpio-monitor.service.d
     install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor.conf \

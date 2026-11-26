@@ -1,5 +1,5 @@
 #
-FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/${BPN}:"
 
 PACKAGECONFIG:remove = "only-run-apr-on-power-loss"
 PACKAGECONFIG:append = " host-gpio"
@@ -95,7 +95,11 @@ SRC_URI:append = " \
     file://discover-sys-init.conf \
     file://phosphor-state-manager-init \
     file://phosphor-state-manager-init.conf \
+    file://move-uart-log \
+    file://move-uart-log.service \
     "
+
+FILES:${PN}-bmc += "${systemd_system_unitdir}/shutdown.target.wants/move-uart-log.service"
 
 RDEPENDS:${PN}:append = " bash"
 
@@ -103,16 +107,20 @@ do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/*.service ${D}${systemd_system_unitdir}/
 
-    install -d ${D}${libexecdir}/${PN}
-    install -m 0755 ${UNPACKDIR}/chassis-poweroff ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/chassis-poweron ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/chassis-powercycle ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/host-force-poweroff ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/host-graceful-poweroff ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/host-poweron ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/host-powerreset ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/power-cmd ${D}${libexecdir}/${PN}/
-    install -m 0755 ${UNPACKDIR}/phosphor-state-manager-init ${D}${libexecdir}/${PN}/
+    install -d ${D}${systemd_system_unitdir}/shutdown.target.wants
+    ln -sf ${systemd_system_unitdir}/move-uart-log.service ${D}${systemd_system_unitdir}/shutdown.target.wants/move-uart-log.service
+
+    install -d ${D}${libexecdir}/${BPN}
+    install -m 0755 ${UNPACKDIR}/chassis-poweroff ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/chassis-poweron ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/chassis-powercycle ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/host-force-poweroff ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/host-graceful-poweroff ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/host-poweron ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/host-powerreset ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/power-cmd ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/phosphor-state-manager-init ${D}${libexecdir}/${BPN}/
+    install -m 0755 ${UNPACKDIR}/move-uart-log ${D}${libexecdir}/${BPN}/
 }
 SYSTEMD_OVERRIDE:${PN}-discover += "discover-sys-init.conf:phosphor-discover-system-state@0.service.d/discover-sys-init.conf"
 SYSTEMD_OVERRIDE:${PN}-systemd-target-monitor += "phosphor-state-manager-init.conf:phosphor-systemd-target-monitor.service.d/phosphor-state-manager-init.conf"

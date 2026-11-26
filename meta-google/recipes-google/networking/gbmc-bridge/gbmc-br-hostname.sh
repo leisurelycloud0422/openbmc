@@ -18,18 +18,15 @@ source /usr/share/gbmc-net-lib.sh || exit
 
 oldname=
 while read -r _; do
-  # Don't bother parsing the output, just read the final hostname
-  name="$(</etc/hostname)" || continue
+  # Don't bother parsing the output, just read the final hostname. The kernel
+  # copy is authoritative and always available, unlike /etc/hostname which is
+  # empty on read-only and volatile root filesystems.
+  name="$(</proc/sys/kernel/hostname)" || continue
+  [ -z "$name" ] && continue
   [[ "$oldname" == "$name" ]] && continue
   oldname="$name"
   echo "Updating BMC RA Hostname $name" >&2
 
-  contents='[IPv6SendRA]'$'\n'"Domains=$name"
-  for netfile in /run/systemd/network/{00,}-bmc-gbmcbr.network.d/60-domains.conf; do
-    mkdir -p "$(dirname "$netfile")"
-    printf '%s' "$contents" >"$netfile"
-   done
-
-  # shellcheck disable=SC2119
-  gbmc_net_networkd_reload
+  gbmc_net_networkd_write_dropin gbmcbr 60-domains.conf \
+    "[IPv6SendRA]"$'\n'"Domains=$name" || true
 done < <(dbus-monitor --system "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',arg0='org.freedesktop.hostname1'")

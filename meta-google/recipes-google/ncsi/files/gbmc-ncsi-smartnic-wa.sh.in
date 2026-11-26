@@ -15,15 +15,24 @@
 
 [[ "$1" != "@NCSI_IF@" ]] && exit 0
 
+# shellcheck source=meta-google/recipes-google/networking/gbmc-net-common/gbmc-net-lib.sh
+source /usr/share/gbmc-net-lib.sh || exit
+
 # shellcheck disable=SC2034
 HAS_DHCRELAY='@GBMC_DHCP_RELAY@'
 
-echo '@NCSI_IF@' >>/run/gbmc-br-dhcp-intfs
+echo "Configuring NCSI SmartNIC workaround for @NCSI_IF@" >&2
+if ! grep -qxF '@NCSI_IF@' /run/gbmc-br-dhcp-intfs 2>/dev/null; then
+  dhcp_intfs="$(cat /run/gbmc-br-dhcp-intfs 2>/dev/null)"
+  gbmc_net_write_if_changed "${dhcp_intfs:+$dhcp_intfs$'\n'}@NCSI_IF@" \
+    /run/gbmc-br-dhcp-intfs || true
+fi
 if systemctl is-active --quiet gbmc-br-dhcp@gbmcbr; then
   systemctl reset-failed gbmc-br-dhcp@@NCSI_IF@
   systemctl restart --no-block gbmc-br-dhcp@@NCSI_IF@
 fi
 
+gbmc_net_reload_queue_start
 read -r -d '' contents <<EOF
 table inet filter {
   chain ncsi_legacy_input {
@@ -34,9 +43,7 @@ table inet filter {
   }
 }
 EOF
-rfile=/run/nftables/40-gbmc-ncsi-smartnic.rules
-mkdir -p "$(dirname "$rfile")"
-printf '%s' "$contents" >"$rfile"
+gbmc_net_write_if_changed "$contents" /run/nftables/40-gbmc-ncsi-smartnic.rules || true
 
 read -r -d '' contents <<EOF
 table inet raw {
@@ -46,8 +53,5 @@ table inet raw {
   }
 }
 EOF
-rfile=/run/nftables/75-gbmc-ncsi-smartnic.rules
-mkdir -p "$(dirname "$rfile")"
-printf '%s' "$contents" >"$rfile"
-systemctl reset-failed nftables
-systemctl --no-block reload-or-restart nftables
+gbmc_net_write_if_changed "$contents" /run/nftables/75-gbmc-ncsi-smartnic.rules || true
+gbmc_net_reload_queue_end
